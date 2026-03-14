@@ -1,0 +1,877 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Vehicle owners and users
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  phone        String?
+  profileImage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  vehicles          Vehicle[]
+  bookings          ServiceBooking[]
+  subscriptions     UserSubscription[]
+  policies          InsurancePolicy[]
+  pushSubscriptions PushSubscription[]
+  supportTickets    SupportTicket[]
+  qrcodeOrders      QRCodeOrder[]
+}
+
+// Vehicle information
+model Vehicle {
+  id           String  @id @default(cuid())
+  qrCode       String  @unique
+  vin          String  @unique
+  make         String
+  model        String
+  year         Int
+  licensePlate String  @unique
+  color        String?
+  mileage      Int?
+
+  // Insurance and ownership
+  insuranceCompany String?
+  insurancePolicy  String?
+  insuranceExpiry  DateTime?
+  profileImage     String?
+
+  // Relations
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  // Service records
+  serviceHistory ServiceRecord[]
+  bookings       ServiceBooking[]
+  policies       InsurancePolicy[]
+  qrCodes        QRCodeOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Service history for vehicles
+model ServiceRecord {
+  id          String   @id @default(cuid())
+  type        String // Oil Change, Tire Rotation, Brake Inspection, etc.
+  description String?
+  mileage     Int?
+  cost        Decimal?
+  performedBy String?
+  notes       String?
+
+  // Relations
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+
+  serviceDate DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Garages and service centers
+model Garage {
+  id      String  @id @default(cuid())
+  name    String
+  address String
+  phone   String
+  email   String?
+  website String?
+
+  // Location
+  latitude  Float
+  longitude Float
+
+  // Services and availability
+  services String // JSON string of services offered
+  hours    String // Business hours
+  rating   Float?  @default(0.0)
+  isActive Boolean @default(true)
+
+  // Relations
+  bookings  ServiceBooking[]
+  mechanics Mechanic[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Service bookings
+model ServiceBooking {
+  id String @id @default(cuid())
+
+  // Booking details
+  serviceType String // towing, mechanic, fuel, accident
+  description String?
+  urgency     String  @default("normal") // normal, urgent, emergency
+  status      String  @default("pending") // pending, assigned, in_progress, completed, cancelled
+
+  // Scheduling
+  preferredDate    DateTime?
+  preferredTime    String?
+  estimatedArrival String?
+
+  // Partner Assignment
+  partnerId  String?
+  mechanicId String?
+  assignedAt DateTime?
+  partnerETA Int? // Estimated time of arrival in minutes
+
+  // Location
+  pickupAddress String
+  latitude      Float
+  longitude     Float
+
+  // Relations
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  garageId  String?
+  garage    Garage? @relation(fields: [garageId], references: [id])
+
+  // Assignment
+  assignments ServiceAssignment[]
+  earnings    Earning[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  partner   Partner? @relation(fields: [partnerId], references: [id])
+}
+
+// Service assignments to mechanics
+model ServiceAssignment {
+  id     String @id @default(cuid())
+  status String @default("assigned") // assigned, in_progress, completed
+
+  // Relations
+  bookingId  String
+  booking    ServiceBooking @relation(fields: [bookingId], references: [id])
+  mechanicId String
+  mechanic   Mechanic       @relation(fields: [mechanicId], references: [id])
+
+  assignedAt  DateTime  @default(now())
+  completedAt DateTime?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Service partners (garages, towing companies, etc.)
+model Partner {
+  id           String  @id @default(cuid())
+  businessName String  @unique
+  email        String  @unique
+  phone        String
+  password     String
+  address      String
+  city         String
+  state        String
+  pincode      String
+  gstNumber    String?
+  panNumber    String?
+  website      String?
+  logo         String?
+  description  String?
+
+  // Business Details
+  services    String // JSON array of services
+  serviceArea String // Geographic area served
+  pricing     String // JSON object of pricing
+  hours       String // Business hours
+
+  // Location
+  latitude  Float
+  longitude Float
+
+  // Verification
+  isVerified       Boolean   @default(false)
+  verificationDate DateTime?
+  verifiedBy       String?
+
+  // Status
+  isActive Boolean @default(true)
+  rating   Float?  @default(0.0)
+
+  // Relations
+  mechanics         Mechanic[]
+  serviceBookings   ServiceBooking[]
+  earnings          Earning[]
+  pushSubscriptions PushSubscription[]
+  supportTickets    SupportTicket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Mechanics and service staff
+model Mechanic {
+  id          String  @id @default(cuid())
+  partnerId   String
+  name        String
+  phone       String
+  email       String?
+  specialties String // JSON array of specialties
+  experience  Int?
+  rating      Float?  @default(0.0)
+  isActive    Boolean @default(true)
+  isOnDuty    Boolean @default(false)
+
+  // Relations
+  partner     Partner             @relation(fields: [partnerId], references: [id])
+  assignments ServiceAssignment[]
+  earnings    Earning[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  garage    Garage?  @relation(fields: [garageId], references: [id])
+  garageId  String?
+}
+
+// Partner earnings
+model Earning {
+  id         String    @id @default(cuid())
+  partnerId  String
+  mechanicId String?
+  bookingId  String
+  amount     Float
+  commission Float
+  status     String    @default("pending") // pending, paid, cancelled
+  earnedAt   DateTime  @default(now())
+  paidAt     DateTime?
+
+  // Relations
+  partner  Partner        @relation(fields: [partnerId], references: [id])
+  mechanic Mechanic?      @relation(fields: [mechanicId], references: [id])
+  booking  ServiceBooking @relation(fields: [bookingId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Payment records
+model Payment {
+  id            String    @id @default(cuid())
+  orderId       String    @unique
+  amount        Float
+  currency      String    @default("INR")
+  paymentMethod String // upi, card, netbanking, cash
+  status        String    @default("pending") // pending, processing, completed, failed, refunded
+  transactionId String?
+  gateway       String? // UPI, CARD, NETBANKING, CASH
+  customerName  String
+  customerEmail String
+  customerPhone String
+  description   String?
+  paidAt        DateTime?
+
+  // Relations
+  order QRCodeOrder @relation(fields: [orderId], references: [orderId])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// QR Code orders
+model QRCodeOrder {
+  id                  String    @id @default(cuid())
+  orderId             String    @unique
+  userId              String
+  vehicleId           String
+  qrType              String // basic, premium, fleet
+  quantity            Int       @default(1)
+  basePrice           Float
+  totalPrice          Float
+  deliveryMethod      String // pickup, home, office
+  deliveryAddress     String
+  paymentMethod       String // upi, card, netbanking, cash
+  status              String    @default("pending") // pending, paid, processing, shipped, delivered, cancelled
+  trackingNumber      String?
+  notes               String?
+  specialInstructions String?
+  orderDate           DateTime  @default(now())
+  shippedDate         DateTime?
+  deliveredDate       DateTime?
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id])
+  vehicle  Vehicle   @relation(fields: [vehicleId], references: [id])
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Admin users
+model Admin {
+  id       String  @id @default(cuid())
+  username String  @unique
+  email    String  @unique
+  name     String
+  role     String  @default("admin") // admin, supervisor, operator, content_manager
+  isActive Boolean @default(true)
+
+  // Relations
+  contentPosts     ContentPost[]
+  mediaFiles       MediaFile[]
+  campaigns        MarketingCampaign[]
+  assignedTickets  SupportTicket[]
+  supportResponses SupportResponse[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Notifications
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String? // For user notifications
+  partnerId  String? // For partner notifications
+  title      String
+  message    String
+  type       String // info, success, warning, error
+  actionUrl  String? // URL to navigate to when clicked
+  actionText String? // Text for action button
+  metadata   String? // JSON metadata
+  isRead     Boolean   @default(false)
+  readAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Uploaded files
+model UploadedFile {
+  id           String   @id @default(cuid())
+  filename     String // Generated unique filename
+  originalName String // Original filename
+  mimeType     String // MIME type
+  size         Int // File size in bytes
+  type         String // 'profile', 'document', 'vehicle', 'insurance'
+  entityId     String // ID of the entity this file belongs to
+  description  String? // File description
+  path         String // File path relative to uploads directory
+  url          String // Public URL
+  uploadedAt   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Subscription plans
+model SubscriptionPlan {
+  id              String  @id @default(cuid())
+  name            String  @unique
+  description     String
+  price           Float // Monthly price
+  currency        String  @default("INR")
+  duration        Int // Duration in months
+  features        String // JSON array of features
+  isActive        Boolean @default(true)
+  isPopular       Boolean @default(false)
+  maxVehicles     Int     @default(1)
+  maxServices     Int     @default(5)
+  prioritySupport Boolean @default(false)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  userSubscriptions UserSubscription[]
+}
+
+// User subscriptions
+model UserSubscription {
+  id              String    @id @default(cuid())
+  userId          String
+  planId          String
+  status          String    @default("active") // active, cancelled, expired, suspended
+  startDate       DateTime
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  autoRenew       Boolean   @default(true)
+  paymentMethod   String? // 'card', 'upi', 'netbanking'
+  lastPaymentAt   DateTime?
+  cancelledAt     DateTime?
+  cancelledReason String?
+
+  // Relations
+  user User             @relation(fields: [userId], references: [id])
+  plan SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  subscriptionPayments SubscriptionPayment[]
+}
+
+// Subscription payments
+model SubscriptionPayment {
+  id              String    @id @default(cuid())
+  subscriptionId  String
+  amount          Float
+  currency        String    @default("INR")
+  paymentMethod   String
+  status          String    @default("pending") // pending, completed, failed, refunded
+  transactionId   String?
+  paymentDate     DateTime?
+  nextBillingDate DateTime?
+
+  // Relations
+  subscription UserSubscription @relation(fields: [subscriptionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Insurance providers
+model InsuranceProvider {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  displayName String
+  type        String // 'health', 'auto', 'life', 'travel'
+  description String?
+  logo        String? // URL to provider logo
+  website     String?
+  phone       String?
+  email       String?
+  address     String?
+  city        String?
+  state       String?
+  pincode     String?
+  isActive    Boolean @default(true)
+  isVerified  Boolean @default(false)
+
+  // Relations
+  policies InsurancePolicy[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Insurance policies
+model InsurancePolicy {
+  id           String   @id @default(cuid())
+  policyNumber String   @unique
+  providerId   String
+  userId       String
+  vehicleId    String
+  type         String // 'comprehensive', 'third-party', 'collision', 'liability'
+  coverage     String // JSON object with coverage details
+  premium      Float // Monthly premium
+  currency     String   @default("INR")
+  startDate    DateTime
+  endDate      DateTime
+  status       String   @default("active") // active, expired, cancelled, claimed
+  sumInsured   Float // Sum insured amount
+  deductible   Float // Deductible amount
+  terms        String? // Policy terms and conditions
+
+  // Relations
+  provider InsuranceProvider @relation(fields: [providerId], references: [id])
+  user     User              @relation(fields: [userId], references: [id])
+  vehicle  Vehicle           @relation(fields: [vehicleId], references: [id])
+  claims   InsuranceClaim[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Insurance claims
+model InsuranceClaim {
+  id               String    @id @default(cuid())
+  policyId         String
+  claimNumber      String    @unique
+  type             String // 'accident', 'theft', 'damage', 'injury', 'death'
+  description      String
+  incidentDate     DateTime
+  incidentLocation String?
+  severity         String // 'minor', 'major', 'severe', 'critical'
+  status           String    @default("pending") // pending, under_review, approved, rejected, settled, closed
+  amount           Float // Claim amount
+  currency         String    @default("INR")
+  approvedAmount   Float? // Approved claim amount
+  settledAmount    Float? // Settled claim amount
+  deductible       Float // Deductible applied
+  documents        String? // JSON array of document URLs
+  notes            String? // Claim notes and updates
+  reviewedBy       String? // Admin who reviewed the claim
+  reviewedAt       DateTime?
+  approvedBy       String? // Admin who approved the claim
+  approvedAt       DateTime?
+  settledBy        String? // Admin who settled the claim
+  settledAt        DateTime?
+
+  // Relations
+  policy InsurancePolicy @relation(fields: [policyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Push subscriptions
+model PushSubscription {
+  id             String  @id @default(cuid())
+  userId         String? // For user notifications
+  partnerId      String? // For partner notifications
+  endpoint       String // Push notification endpoint
+  keys           String // JSON object with p256dh and auth keys
+  expirationTime Int? // Subscription expiration time
+  isActive       Boolean @default(true)
+
+  // Relations
+  user    User?    @relation(fields: [userId], references: [id])
+  partner Partner? @relation(fields: [partnerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Content categories
+model ContentCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  icon        String?
+  color       String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  // Relations
+  posts ContentPost[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Content posts
+model ContentPost {
+  id             String    @id @default(cuid())
+  title          String
+  slug           String    @unique
+  content        String // Rich text content
+  excerpt        String? // Short description for previews
+  featuredImage  String? // URL to featured image
+  status         String    @default("draft") // draft, published, archived
+  type           String    @default("blog") // blog, news, announcement, tutorial
+  authorId       String // Admin or content manager who created it
+  categoryId     String? // Category for organization
+  tags           String? // JSON array of tags
+  seoTitle       String? // SEO title
+  seoDescription String? // SEO description
+  seoKeywords    String? // SEO keywords
+  publishedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  author   Admin            @relation(fields: [authorId], references: [id])
+  category ContentCategory? @relation(fields: [categoryId], references: [id])
+
+  // Analytics
+  views    Int @default(0)
+  likes    Int @default(0)
+  shares   Int @default(0)
+  comments Int @default(0)
+}
+
+// Media files
+model MediaFile {
+  id           String   @id @default(cuid())
+  filename     String // Generated unique filename
+  originalName String // Original filename
+  mimeType     String // MIME type
+  size         Int // File size in bytes
+  type         String // 'image', 'video', 'document', 'audio'
+  url          String // Public URL
+  path         String // File path relative to uploads directory
+  alt          String? // Alt text for images
+  caption      String? // Caption for media
+  uploadedBy   String // Admin who uploaded the file
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  admin        Admin?   @relation(fields: [adminId], references: [id])
+  adminId      String?
+}
+
+// Landing pages
+model LandingPage {
+  id             String    @id @default(cuid())
+  name           String    @unique
+  slug           String    @unique
+  title          String
+  description    String
+  content        String // JSON object with page content
+  template       String // Template name
+  status         String    @default("draft") // draft, published, archived
+  seoTitle       String?
+  seoDescription String?
+  seoKeywords    String?
+  publishedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Analytics
+  views       Int   @default(0)
+  conversions Int   @default(0)
+  bounceRate  Float @default(0)
+}
+
+// Rate limit violations
+model RateLimitViolation {
+  id          String   @id @default(cuid())
+  ip          String
+  userAgent   String
+  endpoint    String
+  count       Int
+  maxRequests Int
+  windowMs    Int
+  resetTime   DateTime
+  createdAt   DateTime @default(now())
+}
+
+// Validation logs
+model ValidationLog {
+  id          String   @id @default(cuid())
+  type        String   // 'user', 'partner', 'vehicle', 'service', 'payment', 'file', 'content', 'support'
+  schema      String   // JSON string of the schema used
+  data        String   // JSON string of the data validated
+  success     Boolean  // Whether validation was successful
+  error       String?  // Error message if validation failed
+  validatedData String?  // JSON string of the validated data
+  createdAt   DateTime @default(now())
+}
+
+// Blacklisted tokens
+model BlacklistedToken {
+  id           String   @id @default(cuid())
+  token        String   @unique
+  jti          String?
+  exp          DateTime?
+  blacklistedAt DateTime @default(now())
+  reason       String?
+  createdAt    DateTime @default(now())
+}
+
+// SSL certificates
+model SSLCertificate {
+  id            String   @id @default(cuid())
+  certificateId String   @unique
+  domain        String
+  issuer        String
+  validFrom     DateTime
+  validTo       DateTime
+  fingerprint   String
+  status        String   @default("installed") // installed, expired, revoked
+  installDate   DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+// SSL renewals
+model SSLRenewal {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  status        String   @default("pending") // pending, processing, completed, failed
+  estimatedTime Int      // Estimated time in seconds
+  renewalDate   DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+// Encryption metadata
+model EncryptionMetadata {
+  id            String   @id @default(cuid())
+  model         String
+  field         String
+  recordId      String?
+  keyId         String
+  iv            String
+  tag           String
+  encryptedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+// Privacy policy
+model PrivacyPolicy {
+  id              String   @id @default(cuid())
+  title           String
+  version         String   @default("1.0")
+  effectiveDate   DateTime
+  content         String
+  dataController  String   @default("QR Code Helpline System")
+  contactEmail    String   @default("privacy@qr-code-helpline.com")
+  retentionPeriods Json     // JSON object with retention periods
+  createdAt       DateTime @default(now())
+}
+
+// Cookie policy
+model CookiePolicy {
+  id              String   @id @default(cuid())
+  title           String
+  version         String   @default("1.0")
+  effectiveDate   DateTime
+  content         String
+  cookieCategories Json     // JSON object with cookie categories
+  retentionPeriod Int      @default(90)
+  createdAt       DateTime @default(now())
+}
+
+// Data processing agreement
+model DataProcessingAgreement {
+  id                String   @id @default(cuid())
+  title             String
+  version           String   @default("1.0")
+  effectiveDate     DateTime
+  content           String
+  dataController    String   @default("QR Code Helpline System")
+  dataProcessor     String   @default("QR Code Helpline System")
+  purposes          Json     // JSON array with purposes
+  dataTypes         Json     // JSON array with data types
+  securityMeasures  Json     // JSON array with security measures
+  subProcessors     Json     // JSON array with sub-processors
+  retentionPeriod   Json     // JSON object with retention periods
+  createdAt         DateTime @default(now())
+}
+
+// Data subject requests
+model DataSubjectRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // 'access', 'rectification', 'erasure', 'portability', 'objection', 'restriction'
+  status      String   @default("pending") // 'pending', 'processing', 'completed', 'failed'
+  error       String?
+  createdAt   DateTime @default(now())
+}
+
+// Consent withdrawals
+model ConsentWithdrawal {
+  id            String   @id @default(cuid())
+  userId        String
+  consentType   String
+  status        String   @default("pending") // 'pending', 'processing', 'completed', 'failed'
+  withdrawnAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+// Marketing campaigns
+model MarketingCampaign {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  type        String // 'email', 'social', 'display', 'push'
+  status      String    @default("draft") // draft, active, paused, completed
+  startDate   DateTime
+  endDate     DateTime?
+  budget      Float?
+  currency    String    @default("INR")
+  target      String? // JSON object with targeting criteria
+  content     String? // JSON object with campaign content
+  results     String? // JSON object with campaign results
+  createdBy   String // Admin who created the campaign
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Analytics
+  sent      Int     @default(0)
+  delivered Int     @default(0)
+  opened    Int     @default(0)
+  clicked   Int     @default(0)
+  converted Int     @default(0)
+  cost      Float   @default(0)
+  revenue   Float   @default(0)
+  admin     Admin?  @relation(fields: [adminId], references: [id])
+  adminId   String?
+}
+
+// Support tickets
+model SupportTicket {
+  id           String  @id @default(cuid())
+  ticketNumber String  @unique
+  subject      String
+  description  String
+  status       String  @default("open") // open, in_progress, resolved, closed, cancelled
+  priority     String  @default("normal") // low, normal, high, urgent, critical
+  type         String // 'general', 'technical', 'billing', 'feature_request', 'bug_report', 'complaint'
+  userId       String? // User who created the ticket
+  partnerId    String? // Partner who created the ticket
+  assignedTo   String? // Admin or support agent assigned to the ticket
+  categoryId   String? // Category for organization
+  tags         String? // JSON array of tags
+  attachments  String? // JSON array of attachment URLs
+
+  // Relations
+  user         User?             @relation(fields: [userId], references: [id])
+  partner      Partner?          @relation(fields: [partnerId], references: [id])
+  assignedUser Admin?            @relation(fields: [assignedTo], references: [id])
+  category     SupportCategory?  @relation(fields: [categoryId], references: [id])
+  responses    SupportResponse[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  resolvedAt DateTime?
+  closedAt   DateTime?
+}
+
+// Support categories
+model SupportCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  icon        String?
+  color       String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  // Relations
+  tickets SupportTicket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Support responses
+model SupportResponse {
+  id          String  @id @default(cuid())
+  ticketId    String
+  content     String
+  isInternal  Boolean @default(false) // Internal note or customer response
+  respondedBy String // Admin or support agent who responded
+  attachments String? // JSON array of attachment URLs
+
+  // Relations
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id])
+  responder Admin         @relation(fields: [respondedBy], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Support knowledge base
+model SupportKB {
+  id           String   @id @default(cuid())
+  title        String
+  slug         String   @unique
+  content      String // Rich text content
+  excerpt      String? // Short description for previews
+  category     String? // Category for organization
+  tags         String? // JSON array of tags
+  isPublished  Boolean  @default(false)
+  viewCount    Int      @default(0)
+  helpfulCount Int      @default(0)
+  createdBy    String // Admin who created the article
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
